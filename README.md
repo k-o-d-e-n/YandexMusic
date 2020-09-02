@@ -1,9 +1,10 @@
 # YandexMusic
 
 Partially implementation of Yandex Music API in Swift.
+
 Thanks [MarshalX](https://github.com/MarshalX) for his [API Yandex Music](https://github.com/MarshalX/yandex-music-api) python library.
 
-__Installation__
+__SPM Dependency__
 
 ```
 .package(url: "https://github.com/k-o-d-e-n/YandexMusic.git", from: "<%v%>")
@@ -36,6 +37,8 @@ __Usage__
     <executable> <CLIENT_ID[:CLIENT_SECRET]> [--options]
     
 __Compile and run__
+
+For example, `MusicYa 1a3b5c7d9e:0z8x6y4w2q --vlc`.
 
 ```
 swift build

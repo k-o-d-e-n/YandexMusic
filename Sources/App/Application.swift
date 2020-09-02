@@ -67,8 +67,9 @@ extension AnyCommand {
         guard let console = application.console else { return }
         var arguments = arguments
         if arguments.isEmpty {
-            let commandline = console.ask("")
-            arguments = commandline.split(separator: " ").map(String.init)
+            if let commandline = application.commandRunner != nil ? readLine(strippingNewline: true) : console.ask("") {
+                arguments = commandline.split(separator: " ").map(String.init)
+            }
         }
         arguments = [CommandLine.arguments[0]] + arguments
         guard arguments.count > 1 else {
@@ -98,6 +99,7 @@ final class Application {
     private var currentPlaylist: [Track]?
     private var playingTrackIndex: Int?
     private var playerProgress: ActivityIndicator<PlayerBar>?
+    private var pauseGroup: DispatchGroup?
 
     let name: String
     let player: Player
@@ -170,7 +172,7 @@ final class Application {
         #endif
     }
 
-    static private func cacheFolder(name: String) -> URL {
+    private static func cacheFolder(name: String) -> URL {
         FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0].appendingPathComponent(name, isDirectory: true)
     }
 
@@ -187,6 +189,7 @@ final class Application {
                 continue
             }
             if isPlayingMode {
+                pauseGroup?.wait()
                 RunLoop.current.run(until: Date(timeIntervalSinceNow: 0.01))
                 continue
             }
@@ -231,14 +234,22 @@ extension Application {
     }
 
     func play() {
+        pauseGroup?.leave()
+        pauseGroup = nil
         player.play()
+        playerProgress?.activity.title = "Playing"
     }
 
     func pause() {
         player.pause()
+        playerProgress?.activity.title = "Paused"
+        pauseGroup = DispatchGroup()
+        pauseGroup?.enter()
     }
 
     func stop() {
+        pauseGroup?.leave()
+        pauseGroup = nil
         self.playerProgress?.succeed()
         self.playerProgress = nil
         player.stop()
@@ -257,6 +268,23 @@ extension Application {
 
     func didEndPlaying() {
         playItem()
+    }
+
+    func likedTracks() -> Result<UserPlaylist, Error> {
+        let semaphore = DispatchSemaphore(value: 0)
+        var result1: Result<LikedTracks, Error>?
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        client.callAPI("users", auth.accessToken!.username!, "likes", "tracks", decoder: decoder) { (result: Result<LikedTracks, Error>) in
+            result1 = result
+            semaphore.signal()
+        }
+        if semaphore.wait(timeout: .now() + .seconds(10)) == .timedOut {
+            result1 = .failure(NSError(domain: "timeout", code: 0, userInfo: nil))
+        }
+        return result1!.flatMap { (likedTracks) -> Result<UserPlaylist, Error> in
+            self.tracks(of: likedTracks.library)
+        }.flatMapError({ .failure($0) })
     }
 
     func feedPlaylists() -> Result<[FeedPlaylist], Error> {
@@ -289,6 +317,28 @@ extension Application {
             return playlists!
         }
         return .success(playlists)
+    }
+
+    func tracks(of playlist: TrackList) -> Result<UserPlaylist, Error> {
+        let semaphore = DispatchSemaphore(value: 0)
+        var tracks: Result<UserPlaylist, Error>?
+        var requestPlaceholder = URLRequest(
+            url: URL(string: "http://placeholder.com?trackIds=" + (playlist.tracks.map({ "\($0.id)" })).joined(separator: ","))!
+        )
+        requestPlaceholder.httpMethod = "POST"
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        client.callAPI("tracks", placeholder: requestPlaceholder) { (result: Result<[Track], Error>) in
+            tracks = result.map({ tracks in
+                UserPlaylist(playlist: playlist, title: "Liked tracks", with: zip(playlist.tracks, tracks).map({ TrackItem(id: Int($0.id) ?? -1, track: $1) }))
+            })
+            semaphore.signal()
+        }
+        if semaphore.wait(timeout: .now() + .seconds(30)) == .timedOut {
+            tracks = .failure(NSError(domain: "timeout", code: 0, userInfo: nil))
+        }
+
+        return tracks!
     }
 
     func tracks(of playlist: FeedPlaylist) -> Result<UserPlaylist, Error> {

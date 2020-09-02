@@ -42,7 +42,7 @@ protocol Player: AnyObject {
 struct PlayerBar: ActivityBar {
     weak var player: Player?
 
-    let title: String
+    var title: String
     let timeFormatter: DateFormatter = {
         let formatter = DateFormatter()
         formatter.dateFormat = "mm:ss"

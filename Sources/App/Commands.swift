@@ -75,7 +75,7 @@ struct PlaylistCommand: Command {
         @Flag(name: "play", short: "p", help: "Play playlist")
         var play: Bool
 
-        @Flag(name: "show", short: "s", help: "Show playlist tracks")
+        @Flag(name: "show", short: nil, help: "Show playlist tracks")
         var show: Bool
 
         @Flag(name: "shuffle", short: "s", help: "Shuffle tracks")
@@ -86,6 +86,9 @@ struct PlaylistCommand: Command {
 
         @Flag(name: "feed", short: "f", help: "Feed playlists")
         var feed: Bool
+
+        @Flag(name: "liked", short: "l", help: "Feed playlists")
+        var liked: Bool
     }
 
     struct NextCommand: Command {
@@ -171,6 +174,10 @@ struct PlaylistCommand: Command {
 
             playlistResult = context.app.tracks(of: chosenPlaylist)
             activity2 = context.console.loadingBar(title: "Tracks:")
+        } else if signature.liked {
+            activity1.succeed()
+            playlistResult = application.likedTracks()
+            activity2 = context.console.loadingBar(title: "Tracks:")
         } else {
             let playlistsResult = application.playlists()
 
@@ -255,7 +262,7 @@ struct HelpCommand: Command {
                 .consoleText(color: .red, background: .brightYellow, isBold: true),
             newLine: true
         )
-        context.console.output(context.console.center("v1.0").consoleText(color: .red))
+        context.console.output(context.console.center("v1.1").consoleText(color: .red))
         context.console.output("* Configuration *", style: .info, newLine: true)
         context.console.output(
             """

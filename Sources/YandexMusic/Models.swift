@@ -7,6 +7,9 @@
 
 import Foundation
 
+public struct LikedTracks: Codable {
+    public let library: TrackList
+}
 public struct Feed: Codable {
     public let canGetMoreEvents: Bool
     public let pumpkin: Bool
@@ -54,6 +57,21 @@ public extension UserPlaylist {
             tracks: tracks
         )
     }
+    init(playlist: TrackList, title: String, with tracks: [TrackItem]) {
+        self = UserPlaylist(
+            uid: playlist.uid,
+            kind: 0,
+            title: title,
+            trackCount: tracks.count,
+            created: Date(),
+            modified: Date(),
+            durationMs: 0,
+            isBanner: false,
+            isPremiere: false,
+            everPlayed: true,
+            tracks: tracks
+        )
+    }
 }
 public struct Playlist<TrackType>: Codable where TrackType: Codable {
     public let uid: Int
@@ -74,6 +92,20 @@ public struct Playlist<TrackType>: Codable where TrackType: Codable {
         let custom: Bool
     }
 }
+public struct TrackList: Codable {
+    public let uid: Int
+    public let revision: Int
+    public let tracks: [TrackShort]
+}
+public struct TrackShort: Codable {
+    public let id: String
+    public let timestamp: Date
+    public let albumId: String?
+    public let playCount: Int?
+    public let recent: Bool?
+    /// let chart: Chart
+    public let track: Track?
+}
 public struct Track: Codable {
     public let id: String
     public let realId: String
@@ -81,9 +113,9 @@ public struct Track: Codable {
     public let available: Bool
     public let availableForPremiumUsers: Bool
     public let availableFullWithoutPermission: Bool
-    public let durationMs: TimeInterval
-    public let fileSize: Int
-    public let major: Major
+    public let durationMs: TimeInterval?
+    public let fileSize: Int?
+    public let major: Major?
     public let albums: [Album]?
     public let artists: [Artist]?
 
@@ -128,5 +160,21 @@ public struct Artist: Codable {
         let type: String
         let prefix: String
         let uri: String
+    }
+}
+public struct Supplement: Codable {
+    public let id: String
+    public let lyrics: Lyrics
+    /// let videos: VideoSupplement
+    public let radioIsAvailable: Bool
+
+    public struct Lyrics: Codable {
+        public let id: Int
+        public let lyrics: String
+        public let hasRights: Bool
+        public let fullLyrics: String
+        public let showTranslation: Bool
+        public let textLanguage: String?
+        public let url: String?
     }
 }
