@@ -41,38 +41,6 @@ public struct Feed: Codable {
 }
 public typealias FeedPlaylist = Playlist<Feed.GeneratedPlaylist.Track>
 public typealias UserPlaylist = Playlist<TrackItem>
-public extension UserPlaylist {
-    init(feed playlist: FeedPlaylist, with tracks: [TrackItem]?) {
-        self = UserPlaylist(
-            uid: playlist.uid,
-            kind: playlist.kind,
-            title: playlist.title,
-            trackCount: playlist.trackCount,
-            created: playlist.created,
-            modified: playlist.modified,
-            durationMs: playlist.durationMs,
-            isBanner: playlist.isBanner,
-            isPremiere: playlist.isPremiere,
-            everPlayed: playlist.everPlayed,
-            tracks: tracks
-        )
-    }
-    init(playlist: TrackList, title: String, with tracks: [TrackItem]) {
-        self = UserPlaylist(
-            uid: playlist.uid,
-            kind: 0,
-            title: title,
-            trackCount: tracks.count,
-            created: Date(),
-            modified: Date(),
-            durationMs: 0,
-            isBanner: false,
-            isPremiere: false,
-            everPlayed: true,
-            tracks: tracks
-        )
-    }
-}
 public struct Playlist<TrackType>: Codable where TrackType: Codable {
     public let uid: Int
     public let kind: Int
@@ -90,6 +58,32 @@ public struct Playlist<TrackType>: Codable where TrackType: Codable {
         let type: String
         let itemsUri: [String]
         let custom: Bool
+    }
+    
+    public init(
+        uid: Int,
+        kind: Int,
+        title: String,
+        trackCount: Int,
+        created: Date,
+        modified: Date?,
+        durationMs: Int,
+        isBanner: Bool,
+        isPremiere: Bool,
+        everPlayed: Bool?,
+        tracks: [TrackType]?
+    ) {
+        self.uid = uid
+        self.kind = kind
+        self.title = title
+        self.trackCount = trackCount
+        self.created = created
+        self.modified = modified
+        self.durationMs = durationMs
+        self.isBanner = isBanner
+        self.isPremiere = isPremiere
+        self.everPlayed = everPlayed
+        self.tracks = tracks
     }
 }
 public struct TrackList: Codable {

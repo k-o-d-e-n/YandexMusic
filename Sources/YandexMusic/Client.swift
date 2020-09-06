@@ -67,6 +67,39 @@ public final class Client {
         let region: String?
         let s: String
     }
+    public struct PlayEvent: Codable {
+        let playId: String
+        let trackId: String
+        let from: String
+        let albumId: Int
+        let playlistId: String?
+        let uid: Int?
+        let fromCache: Bool?
+        let timestamp: Date
+        let trackLengthSeconds: Int?
+        let totalPlayedSeconds: Int?
+        let endPositionSeconds: Int?
+        let clientNow: Date?
+
+        public init(
+            trackId: String, albumId: Int, from: String, playlistId: String?, fromCache: Bool?,
+            playId: String, uid: Int?, timestamp: Date?, trackLength: Int?, totalPlayed: Int?,
+            endPosition: Int?, clientNow: Date?
+        ) {
+            self.trackId = trackId
+            self.albumId = albumId
+            self.from = from
+            self.playlistId = playlistId
+            self.fromCache = fromCache
+            self.playId = playId
+            self.uid = uid
+            self.timestamp = timestamp ?? Date()
+            self.trackLengthSeconds = trackLength
+            self.totalPlayedSeconds = totalPlayed
+            self.endPositionSeconds = endPosition
+            self.clientNow = clientNow
+        }
+    }
 }
 extension Client.Configuration {
     fileprivate func apiUrl(_ components: String...) -> URL {
@@ -106,6 +139,9 @@ extension Client {
         }
         task.resume()
     }
+    public func likedObjects<Items: Decodable>(ofUserWith userID: String, objectName: String, decoder: JSONDecoder, completion: @escaping (Result<Items, Error>) -> Void) {
+        callAPI("users", userID, "likes", objectName, decoder: decoder, completion: completion)
+    }
 }
 
 extension Client {
@@ -114,7 +150,7 @@ extension Client {
         urlRequest.cachePolicy = .returnCacheDataElseLoad
 
         guard let token = configuration.tokenProvider.currentToken else { return completion(.failure(OperationError.tokenUnavailable)) }
-        urlRequest.addValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        urlRequest.addValue("OAuth \(token)", forHTTPHeaderField: "Authorization")
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
         let task = session.response(for: urlRequest, decoder: decoder) { (result: Result<Response<[UserPlaylist]>, SDKHTTPError>) in
@@ -135,7 +171,7 @@ extension Client {
         urlRequest.cachePolicy = .returnCacheDataElseLoad
 
         guard let token = configuration.tokenProvider.currentToken else { return completion(.failure(OperationError.tokenUnavailable)) }
-        urlRequest.addValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        urlRequest.addValue("OAuth \(token)", forHTTPHeaderField: "Authorization")
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
         let task = session.response(for: urlRequest, decoder: decoder) { (result: Result<Response<UserPlaylist>, SDKHTTPError>) in
@@ -174,7 +210,7 @@ extension Client {
         var urlRequest = URLRequest(url: url)
         urlRequest.cachePolicy = .reloadIgnoringLocalCacheData
         guard let token = configuration.tokenProvider.currentToken else { return completion(.failure(OperationError.tokenUnavailable)) }
-        urlRequest.addValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        urlRequest.addValue("OAuth \(token)", forHTTPHeaderField: "Authorization")
         let task = session.dataTask(with: urlRequest) { (data, response, error) in
             guard let dat = data else { return completion(.failure(SDKHTTPError.noData(error))) }
             do {
@@ -189,5 +225,40 @@ extension Client {
             }
         }
         task.resume()
+    }
+}
+extension Client {
+    public func tracks(with ids: [String], completion: @escaping (Result<[Track], Error>) -> Void) {
+        var requestPlaceholder = URLRequest(
+            url: URL(string: "http://placeholder.com?trackIds=" + ids.joined(separator: ","))!
+        )
+        requestPlaceholder.httpMethod = "POST"
+        callAPI("tracks", placeholder: requestPlaceholder, completion: completion)
+    }
+    public func feed(completion: @escaping (Result<Feed, Error>) -> Void) {
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        callAPI("feed", decoder: decoder, completion: completion)
+    }
+    public func likedTracks(ofUserWith userID: String, completion: @escaping (Result<LikedTracks, Error>) -> Void) {
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        likedObjects(ofUserWith: userID, objectName: "tracks", decoder: decoder, completion: completion)
+    }
+    public func sendPlay(_ event: PlayEvent, completion: @escaping (Result<String, Error>) -> Void) {
+        var request = URLRequest(url: URL(string: "http://placeholder.com")!)
+        request.httpMethod = "POST"
+        request.addValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
+        let dateFormatter = DateFormatter()
+        dateFormatter.dateFormat = "YYYY'-'MM'-'dd'T'HH':'mm':'ss'.'SSS'Z'"
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .formatted(dateFormatter)
+        encoder.keyEncodingStrategy = .convertToKebabCase
+        request.httpBody = (try! JSONSerialization.jsonObject(with: encoder.encode(event), options: .allowFragments) as! NSDictionary)//Mirror(reflecting: event).children
+            .map({ "\($0.key)=\($0.value)" })
+            .joined(separator: "&")
+            .data(using: .utf8)
+        request.addValue("\(request.httpBody!.count)", forHTTPHeaderField: "Content-Length")
+        callAPI("play-audio", placeholder: request, completion: completion)
     }
 }

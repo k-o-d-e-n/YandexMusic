@@ -262,7 +262,7 @@ struct HelpCommand: Command {
                 .consoleText(color: .red, background: .brightYellow, isBold: true),
             newLine: true
         )
-        context.console.output(context.console.center("v1.1").consoleText(color: .red))
+        context.console.output(context.console.center("v1.2").consoleText(color: .red))
         context.console.output("* Configuration *", style: .info, newLine: true)
         context.console.output(
             """

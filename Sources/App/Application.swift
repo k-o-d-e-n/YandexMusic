@@ -13,6 +13,29 @@ import ConsoleKit
 import FoundationNetworking
 #endif
 
+private func callAPI<R>(timeout: DispatchTimeInterval = .seconds(10), _ call: (@escaping (Result<R, Error>) -> Void) -> Void) -> Result<R, Error> {
+    let semaphore = DispatchSemaphore(value: 0)
+    var result: Result<R, Error>!
+    call({ (res: Result<R, Error>) in
+        result = res
+        semaphore.signal()
+    })
+    if semaphore.wait(timeout: .now() + timeout) == .timedOut {
+        result = .failure(NSError(domain: "timeout", code: 0, userInfo: nil))
+    }
+    return result
+}
+
+extension CommandContext {
+    var app: Application { return userInfo["app"] as! Application }
+
+    init(application: Application, input: CommandInput) {
+        guard let console = application.console else { fatalError("Application must be running") }
+        self.init(console: console, input: input)
+        self.userInfo["app"] = application
+    }
+}
+
 final class CommandRunner {
     let queue: DispatchQueue?
     let commands: CommandGroup
@@ -237,12 +260,16 @@ extension Application {
         pauseGroup?.leave()
         pauseGroup = nil
         player.play()
-        playerProgress?.activity.title = "Playing"
+        if let pp = playerProgress {
+            pp.activity.title = "Playing:" + pp.activity.title.split(separator: ":")[1]
+        }
     }
 
     func pause() {
         player.pause()
-        playerProgress?.activity.title = "Paused"
+        if let pp = playerProgress {
+            pp.activity.title = "Paused:" + pp.activity.title.split(separator: ":")[1]
+        }
         pauseGroup = DispatchGroup()
         pauseGroup?.enter()
     }
@@ -267,114 +294,8 @@ extension Application {
     }
 
     func didEndPlaying() {
+        didPlay(track: currentTrack!, fromPlaylist: nil, fromCache: nil)
         playItem()
-    }
-
-    func likedTracks() -> Result<UserPlaylist, Error> {
-        let semaphore = DispatchSemaphore(value: 0)
-        var result1: Result<LikedTracks, Error>?
-        let decoder = JSONDecoder()
-        decoder.dateDecodingStrategy = .iso8601
-        client.callAPI("users", auth.accessToken!.username!, "likes", "tracks", decoder: decoder) { (result: Result<LikedTracks, Error>) in
-            result1 = result
-            semaphore.signal()
-        }
-        if semaphore.wait(timeout: .now() + .seconds(10)) == .timedOut {
-            result1 = .failure(NSError(domain: "timeout", code: 0, userInfo: nil))
-        }
-        return result1!.flatMap { (likedTracks) -> Result<UserPlaylist, Error> in
-            self.tracks(of: likedTracks.library)
-        }.flatMapError({ .failure($0) })
-    }
-
-    func feedPlaylists() -> Result<[FeedPlaylist], Error> {
-        let semaphore = DispatchSemaphore(value: 0)
-        var playlists: Result<[FeedPlaylist], Error>?
-        let decoder = JSONDecoder()
-        decoder.dateDecodingStrategy = .iso8601
-        client.callAPI("feed", decoder: decoder) { (result: Result<Feed, Error>) in
-            playlists = result.map({ $0.generatedPlaylists.map({ $0.data }) })
-            semaphore.signal()
-        }
-        if semaphore.wait(timeout: .now() + .seconds(10)) == .timedOut {
-            playlists = .failure(NSError(domain: "timeout", code: 0, userInfo: nil))
-        }
-        return playlists!
-    }
-
-    func playlists(ofUser username: String? = nil) -> Result<[UserPlaylist], Error> {
-        guard let playlists = userPlaylists else {
-            let semaphore = DispatchSemaphore(value: 0)
-            var playlists: Result<[UserPlaylist], Error>?
-            client.playlists(ofUserWith: username ?? auth.username) { (result) in
-                playlists = result
-                semaphore.signal()
-            }
-            if semaphore.wait(timeout: .now() + .seconds(10)) == .timedOut {
-                playlists = .failure(NSError(domain: "timeout", code: 0, userInfo: nil))
-            }
-
-            return playlists!
-        }
-        return .success(playlists)
-    }
-
-    func tracks(of playlist: TrackList) -> Result<UserPlaylist, Error> {
-        let semaphore = DispatchSemaphore(value: 0)
-        var tracks: Result<UserPlaylist, Error>?
-        var requestPlaceholder = URLRequest(
-            url: URL(string: "http://placeholder.com?trackIds=" + (playlist.tracks.map({ "\($0.id)" })).joined(separator: ","))!
-        )
-        requestPlaceholder.httpMethod = "POST"
-        let decoder = JSONDecoder()
-        decoder.dateDecodingStrategy = .iso8601
-        client.callAPI("tracks", placeholder: requestPlaceholder) { (result: Result<[Track], Error>) in
-            tracks = result.map({ tracks in
-                UserPlaylist(playlist: playlist, title: "Liked tracks", with: zip(playlist.tracks, tracks).map({ TrackItem(id: Int($0.id) ?? -1, track: $1) }))
-            })
-            semaphore.signal()
-        }
-        if semaphore.wait(timeout: .now() + .seconds(30)) == .timedOut {
-            tracks = .failure(NSError(domain: "timeout", code: 0, userInfo: nil))
-        }
-
-        return tracks!
-    }
-
-    func tracks(of playlist: FeedPlaylist) -> Result<UserPlaylist, Error> {
-        let semaphore = DispatchSemaphore(value: 0)
-        var tracks: Result<UserPlaylist, Error>?
-        var requestPlaceholder = URLRequest(
-            url: URL(string: "http://placeholder.com?trackIds=" + (playlist.tracks?.map({ "\($0.id)" }) ?? []).joined(separator: ","))!
-        )
-        requestPlaceholder.httpMethod = "POST"
-        let decoder = JSONDecoder()
-        decoder.dateDecodingStrategy = .iso8601
-        client.callAPI("tracks", placeholder: requestPlaceholder) { (result: Result<[Track], Error>) in
-            tracks = result.map({ tracks in
-                UserPlaylist(feed: playlist, with: zip(playlist.tracks ?? [], tracks).map({ TrackItem(id: $0.id, track: $1) }))
-            })
-            semaphore.signal()
-        }
-        if semaphore.wait(timeout: .now() + .seconds(10)) == .timedOut {
-            tracks = .failure(NSError(domain: "timeout", code: 0, userInfo: nil))
-        }
-
-        return tracks!
-    }
-
-    func tracks(of playlist: UserPlaylist, user username: String? = nil) -> Result<UserPlaylist, Error> {
-        let semaphore = DispatchSemaphore(value: 0)
-        var tracks: Result<UserPlaylist, Error>?
-        client.tracks(ofPlaylistWith: "\(playlist.kind)", userID: username ?? auth.username) { (result) in
-            tracks = result
-            semaphore.signal()
-        }
-        if semaphore.wait(timeout: .now() + .seconds(10)) == .timedOut {
-            tracks = .failure(NSError(domain: "timeout", code: 0, userInfo: nil))
-        }
-
-        return tracks!
     }
 
     func play(tracks: [Track]) -> Result<ActivityIndicator<PlayerBar>?, Error> {
@@ -418,66 +339,6 @@ extension Application {
         self.playerProgress = console.map { PlayerBar(title: "Playing: " + title, player: player).newActivity(for: $0) }
         playerProgress?.start(refreshRate: 1000)
         return playerProgress
-    }
-
-    func prepareToPlay(track: Track) -> Result<[Track.DownloadInfo], Error> {
-        let semaphore = DispatchSemaphore(value: 0)
-        var result: Result<[Track.DownloadInfo], Error>?
-        client.downloadInfo(ofTrackWith: track.downloadTrackID) { (res) in
-            result = res
-            semaphore.signal()
-        }
-        if semaphore.wait(timeout: .now() + .seconds(10)) == .timedOut {
-            result = .failure(NSError(domain: "timeout", code: 0, userInfo: nil))
-        }
-        return result!
-    }
-
-    private func load(info: Track.DownloadInfo, cacheFile: URL) -> Result<URL, Error> {
-        guard let url = URL(string: info.downloadInfoUrl) else { return .failure(NSError(domain: "bad-url", code: 0, userInfo: nil)) }
-
-        let semaphore = DispatchSemaphore(value: 0)
-        var result: Result<URL, Error>?
-        var timeout: Int = .max
-        if info.direct {
-            result = load(url, cacheFile: cacheFile)
-            semaphore.signal()
-        } else {
-            timeout = 180
-            client.downloadURL(by: url, codec: info.codec) { [unowned self] (res) in
-                DispatchQueue.global(qos: .userInitiated).async {
-                    result = res.flatMap({ self.load($0, cacheFile: cacheFile) })
-                    semaphore.signal()
-                }
-            }
-        }
-        if semaphore.wait(timeout: .now() + .seconds(timeout)) == .timedOut {
-            result = .failure(NSError(domain: "timeout", code: 0, userInfo: nil))
-        }
-        return result!
-    }
-
-    private func load(_ url: URL, cacheFile: URL) -> Result<URL, Error> {
-        let semaphore = DispatchSemaphore(value: 0)
-        var result: Result<URL, Error>?
-        let task = URLSession.shared.downloadTask(with: url, completionHandler: { (fileUrl, response, error) in
-            if let fUrl = fileUrl {
-                do {
-                    try FileManager.default.copyItem(at: fUrl, to: cacheFile)
-                    result = .success(cacheFile)
-                } catch {
-                    result = .failure(NSError(domain: "cannot-open-file", code: 0, userInfo: nil))
-                }
-            } else {
-                result = .failure(error ?? NSError(domain: "cannot-download-file", code: 0, userInfo: nil))
-            }
-            semaphore.signal()
-        })
-        task.resume()
-        if semaphore.wait(timeout: .now() + .seconds(120)) == .timedOut {
-            result = .failure(NSError(domain: "timeout", code: 0, userInfo: nil))
-        }
-        return result!
     }
 
     final class TokenProvider: AccessTokenProvider {
@@ -573,12 +434,111 @@ extension Application {
         }
     }
 }
-extension CommandContext {
-    var app: Application { return userInfo["app"] as! Application }
+extension Application {
+    func likedTracks() -> Result<UserPlaylist, Error> {
+        callAPI { (completion) in
+            client.likedTracks(ofUserWith: auth.accessToken!.username!, completion: completion)
+        }
+        .flatMap { (likedTracks) -> Result<UserPlaylist, Error> in
+            self.tracks(of: likedTracks.library)
+        }
+    }
 
-    init(application: Application, input: CommandInput) {
-        guard let console = application.console else { fatalError("Application must be running") }
-        self.init(console: console, input: input)
-        self.userInfo["app"] = application
+    func feedPlaylists() -> Result<[FeedPlaylist], Error> {
+        callAPI(client.feed(completion:)).map({ $0.generatedPlaylists.map({ $0.data }) })
+    }
+
+    func playlists(ofUser username: String? = nil) -> Result<[UserPlaylist], Error> {
+        guard let playlists = userPlaylists else {
+            return callAPI { (completion) in
+                client.playlists(ofUserWith: username ?? auth.username, completion: completion)
+            }
+        }
+        return .success(playlists)
+    }
+
+    func tracks(of playlist: TrackList) -> Result<UserPlaylist, Error> {
+        callAPI(timeout: .seconds(30)) { (completion) in
+            client.tracks(with: playlist.tracks.map({ "\($0.id)" }), completion: completion)
+        }.map({ tracks in
+            UserPlaylist(playlist: playlist, title: "Liked tracks", with: zip(playlist.tracks, tracks).map({ TrackItem(id: Int($0.id) ?? -1, track: $1) }))
+        })
+    }
+
+    func tracks(of playlist: FeedPlaylist) -> Result<UserPlaylist, Error> {
+        callAPI { (completion) in
+            client.tracks(with: playlist.tracks?.map({ "\($0.id)" }) ?? [], completion: completion)
+        }.map({ tracks in
+            UserPlaylist(feed: playlist, with: zip(playlist.tracks ?? [], tracks).map({ TrackItem(id: $0.id, track: $1) }))
+        })
+    }
+
+    func tracks(of playlist: UserPlaylist, user username: String? = nil) -> Result<UserPlaylist, Error> {
+        callAPI { (completion) in
+            client.tracks(ofPlaylistWith: "\(playlist.kind)", userID: username ?? auth.username, completion: completion)
+        }
+    }
+
+    private func prepareToPlay(track: Track) -> Result<[Track.DownloadInfo], Error> {
+        callAPI { (completion) in
+            client.downloadInfo(ofTrackWith: track.downloadTrackID, completion: completion)
+        }
+    }
+
+    private func load(info: Track.DownloadInfo, cacheFile: URL) -> Result<URL, Error> {
+        guard let url = URL(string: info.downloadInfoUrl) else { return .failure(NSError(domain: "bad-url", code: 0, userInfo: nil)) }
+
+        let semaphore = DispatchSemaphore(value: 0)
+        var result: Result<URL, Error>?
+        var timeout: Int = .max
+        if info.direct {
+            result = load(url, cacheFile: cacheFile)
+            semaphore.signal()
+        } else {
+            timeout = 180
+            client.downloadURL(by: url, codec: info.codec) { [unowned self] (res) in
+                DispatchQueue.global(qos: .userInitiated).async {
+                    result = res.flatMap({ self.load($0, cacheFile: cacheFile) })
+                    semaphore.signal()
+                }
+            }
+        }
+        if semaphore.wait(timeout: .now() + .seconds(timeout)) == .timedOut {
+            result = .failure(NSError(domain: "timeout", code: 0, userInfo: nil))
+        }
+        return result!
+    }
+
+    private func load(_ url: URL, cacheFile: URL) -> Result<URL, Error> {
+        callAPI(timeout: .seconds(120)) { (completion) in
+            let task = URLSession.shared.downloadTask(with: url, completionHandler: { (fileUrl, response, error) in
+                if let fUrl = fileUrl {
+                    do {
+                        try FileManager.default.copyItem(at: fUrl, to: cacheFile)
+                        completion(.success(cacheFile))
+                    } catch {
+                        completion(.failure(NSError(domain: "cannot-open-file", code: 0, userInfo: nil)))
+                    }
+                } else {
+                    completion(.failure(error ?? NSError(domain: "cannot-download-file", code: 0, userInfo: nil)))
+                }
+            })
+            task.resume()
+        }
+    }
+
+    private func didPlay(track: Track, fromPlaylist plId: String?, fromCache: Bool?) {
+        let duration = track.durationMs.map(Int.init).map({ $0 / 1000 })
+        let event = Client.PlayEvent(
+            trackId: track.id, albumId: track.albums?.first?.id ?? 0, from: "YandexMusicAndroid/23020251",
+            playlistId: plId, fromCache: fromCache, playId: "", uid: auth.accessToken?.uid,
+            timestamp: Date(), trackLength: duration, totalPlayed: duration, endPosition: duration,
+            clientNow: Date()
+        )
+        client.sendPlay(event) { (result) in
+            #if DEBUG && Xcode
+            print("Did send play event with result", result)
+            #endif
+        }
     }
 }
