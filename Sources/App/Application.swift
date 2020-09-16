@@ -118,8 +118,8 @@ extension AnyCommand {
 final class Application {
     private var notificationObserver: NSObjectProtocol?
     fileprivate var commandRunner: CommandRunner?
-    private var userPlaylists: [UserPlaylist]?
-    private var currentPlaylist: [Track]?
+    private var tracksQueue: [Track] = []
+    private var currentList: CurrentList = .custom
     private var playingTrackIndex: Int?
     private var playerProgress: ActivityIndicator<PlayerBar>?
     private var pauseGroup: DispatchGroup?
@@ -143,7 +143,14 @@ final class Application {
     var cacheFolder: URL {
         FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0].appendingPathComponent(name, isDirectory: true)
     }
-    var currentTrack: Track? { playingTrackIndex.flatMap({ currentPlaylist?[$0] }) }
+    var currentTrack: Track? { playingTrackIndex.map({ tracksQueue[$0] }) }
+
+    enum CurrentList {
+        case user(UserPlaylist)
+        case feed(FeedPlaylist)
+        case station(RadioStation)
+        case custom
+    }
 
     struct Signature: CommandSignature {
         @Argument(name: "client", help: "Client ID and Secret")
@@ -169,6 +176,7 @@ final class Application {
 
         var commands = Commands(enableAutocomplete: true)
         commands.use(MeCommand(), as: "me")
+        commands.use(RadioCommand(), as: "radio")
         commands.use(PlaylistCommand(), as: "playlist")
         commands.use(HelpCommand(), as: "help")
         commands.use(ExitCommand(), as: "exit")
@@ -286,25 +294,48 @@ extension Application {
         stop()
         guard let currentIndex = playingTrackIndex else { return }
         let nextIndex = currentIndex + offset
-        guard currentPlaylist!.count > nextIndex, nextIndex > -1 else {
+        guard tracksQueue.count > nextIndex, nextIndex > -1 else {
             stopAndRemoveContext()
             return
         }
-        _ = play(track: currentPlaylist![nextIndex], index: nextIndex)
+        _ = play(track: tracksQueue[nextIndex], index: nextIndex)
     }
 
     func didEndPlaying() {
-        didPlay(track: currentTrack!, fromPlaylist: nil, fromCache: nil)
+        let current = currentTrack!
+        if tracksQueue.count == playingTrackIndex! + 1, case .station(let station) = currentList {
+            self.playerProgress?.succeed()
+            self.playerProgress = nil
+            let activity = console?.loadingBar(title: "Preparing...")
+            activity?.start()
+            let nextBatchResult = tracks(of: station, last: current)
+            guard case .success(let result) = nextBatchResult else {
+                activity?.fail()
+                console?.error(String(describing: nextBatchResult), newLine: true)
+                return
+            }
+            activity?.succeed()
+            tracksQueue += result.sequence.map({ $0.track })
+        } else {
+            let playlistId: String?
+            switch currentList {
+            case .feed(let pl): playlistId = "\(pl.kind)"
+            case .user(let pl): playlistId = "\(pl.kind)"
+            default: playlistId = nil
+            }
+            didPlay(track: current, fromPlaylist: playlistId, fromCache: nil)
+        }
         playItem()
     }
 
-    func play(tracks: [Track]) -> Result<ActivityIndicator<PlayerBar>?, Error> {
-        self.currentPlaylist = tracks
+    func play(list: CurrentList, queue: [Track]) -> Result<ActivityIndicator<PlayerBar>?, Error> {
+        self.currentList = list
+        self.tracksQueue = queue
         player.stop()
         player.removeAllItems()
-        guard tracks.count > 0 else { return .success(nil) }
+        guard queue.count > 0 else { return .success(nil) }
 
-        return play(track: tracks[0], index: 0)
+        return play(track: queue[0], index: 0)
     }
 
     func play(track: Track, index: Int) -> Result<ActivityIndicator<PlayerBar>?, Error> {
@@ -435,6 +466,16 @@ extension Application {
     }
 }
 extension Application {
+    func radioDashboard() -> Result<RadioDashboard, Error> {
+        callAPI(client.stationsDashboard(completion:))
+    }
+
+    func tracks(of station: RadioStation, last: Track? = nil) -> Result<StationTracksResult, Error> {
+        callAPI { (completion) in
+            client.queue(forStationWith: station.id, last: last?.id, completion: completion)
+        }
+    }
+
     func likedTracks() -> Result<UserPlaylist, Error> {
         callAPI { (completion) in
             client.likedTracks(ofUserWith: auth.accessToken!.username!, completion: completion)
@@ -449,12 +490,9 @@ extension Application {
     }
 
     func playlists(ofUser username: String? = nil) -> Result<[UserPlaylist], Error> {
-        guard let playlists = userPlaylists else {
-            return callAPI { (completion) in
-                client.playlists(ofUserWith: username ?? auth.username, completion: completion)
-            }
+        callAPI { (completion) in
+            client.playlists(ofUserWith: username ?? auth.username, completion: completion)
         }
-        return .success(playlists)
     }
 
     func tracks(of playlist: TrackList) -> Result<UserPlaylist, Error> {

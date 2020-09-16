@@ -172,3 +172,58 @@ public struct Supplement: Codable {
         public let url: String?
     }
 }
+public struct RadioDashboard: Codable {
+    public let dashboardId: String
+    public let stations: [StationResult]
+    public let pumpkin: Bool
+
+    public struct StationResult: Codable {
+        public let station: RadioStation
+        /// public let settings: RotorSettings
+        /// public let settings2: RotorSettings
+        /// public let adParams: AdParams
+        public let explanation: String?
+        public let prerolls: [String]?
+    }
+}
+public struct RadioStation: Codable {
+    public let id: ID
+    public let parentId: ID?
+    public let name: String
+    /// public let icon: Icon
+    /// public let mtsIcon: Icon
+    /// public let geocellIcon: Icon
+    public let idForFrom: String
+    /// public let restrictions: Restrictions
+    /// public let restrictions2: Restrictions
+    public let fullImageUrl: String?
+    /// public let mtsFullImageUrl: String?
+
+    public struct ID: Codable {
+        public let type: String
+        public let tag: String
+    }
+    public struct Icon: Codable {
+        public let backgroundColor: String /// HEX
+        public let imageUrl: String
+    }
+    public struct Restrictions: Codable {
+        /// public let language: Enum
+        /// public let diversity: Enum
+        /// public let mood: DiscreteScale?
+        /// public let energy: DiscreteScale?
+        /// public let moodEnergy: Enum?
+    }
+}
+public struct StationTracksResult: Codable {
+    public let id: RadioStation.ID
+    public let sequence: [SequenceItem]
+    public let batchId: String
+    public let pumpkin: Bool
+
+    public struct SequenceItem: Codable {
+        public let type: String
+        public let track: Track
+        public let liked: Bool
+    }
+}

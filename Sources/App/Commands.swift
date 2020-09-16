@@ -202,9 +202,6 @@ struct PlaylistCommand: Command {
         activity2.succeed()
 
         if signature.play {
-            let tracks = (playlist.tracks ?? []).map { (trackItem) in
-                trackItem.track
-            }
             application.runContext(
                 Commands(
                     commands: [
@@ -215,7 +212,11 @@ struct PlaylistCommand: Command {
                     enableAutocomplete: false
                 )
             )
-            let playResult = application.play(tracks: signature.shuffle ? tracks.shuffled() : signature.reverse ? tracks.reversed() : tracks)
+            let tracks = playlist.tracks?.map({ $0.track }) ?? []
+            let playResult = application.play(
+                list: .user(playlist),
+                queue: signature.shuffle ? tracks.shuffled() : signature.reverse ? tracks.reversed() : tracks
+            )
             guard case .success = playResult else {
                 application.stopAndRemoveContext()
                 return context.console.error(String(describing: playResult), newLine: true)
@@ -229,6 +230,55 @@ struct PlaylistCommand: Command {
                         .consoleText(color: .custom(r: 25, g: 25, b: 25))
                 )
             }
+        }
+    }
+}
+struct RadioCommand: Command {
+    struct Signature: CommandSignature {
+        @Flag(name: "all", short: nil, help: "All stations")
+        var all: Bool
+    }
+
+    var help: String { "Play radio" }
+
+    func run(using context: CommandContext, signature: Signature) throws {
+        let application = context.app
+        let activity1 = context.console.loadingBar(title: "Stations:")
+        activity1.start()
+        let result = application.radioDashboard()
+        guard case .success(let dashboard) = result else {
+            activity1.fail()
+            return context.console.error(String(describing: result), newLine: true)
+        }
+        activity1.succeed()
+        let chosen = context.console.choose("Choose station", from: dashboard.stations) { item -> ConsoleText in
+            item.station.name.consoleText(color: .white, background: nil, isBold: true)
+        }
+        let activity2 = context.console.loadingBar(title: "Tracks:")
+        activity2.start()
+        let tracksResult = application.tracks(of: chosen.station)
+        guard case .success(let tracks) = tracksResult else {
+            activity2.fail()
+            return context.console.error(String(describing: tracksResult), newLine: true)
+        }
+        activity2.succeed()
+        application.runContext(
+            Commands(
+                commands: [
+                    "<<": PlaylistCommand.PreviousCommand(), "||": PlaylistCommand.PauseCommand(), ">": PlaylistCommand.ContinueCommand(),
+                    "[]": PlaylistCommand.StopCommand(), ">>": PlaylistCommand.NextCommand(), "p": PlaylistCommand.PageCommand()
+                ],
+                defaultCommand: nil,
+                enableAutocomplete: false
+            )
+        )
+        let playResult = application.play(
+            list: .station(chosen.station),
+            queue: tracks.sequence.map({ $0.track })
+        )
+        guard case .success = playResult else {
+            application.stopAndRemoveContext()
+            return context.console.error(String(describing: playResult), newLine: true)
         }
     }
 }
@@ -262,7 +312,7 @@ struct HelpCommand: Command {
                 .consoleText(color: .red, background: .brightYellow, isBold: true),
             newLine: true
         )
-        context.console.output(context.console.center("v1.2").consoleText(color: .red))
+        context.console.output(context.console.center("v1.3").consoleText(color: .red))
         context.console.output("* Configuration *", style: .info, newLine: true)
         context.console.output(
             """

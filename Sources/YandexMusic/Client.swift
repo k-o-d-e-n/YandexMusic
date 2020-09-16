@@ -262,3 +262,17 @@ extension Client {
         callAPI("play-audio", placeholder: request, completion: completion)
     }
 }
+extension Client {
+    public func stationsDashboard(completion: @escaping (Result<RadioDashboard, Error>) -> Void) {
+        callAPI("rotor", "stations", "dashboard", completion: completion)
+    }
+    public func queue(forStationWith stationId: RadioStation.ID, last trackId: String? = nil, useSetting2: Bool? = nil, completion: @escaping (Result<StationTracksResult, Error>) -> Void) {
+        var urlComponents = URLComponents(string: "http://placeholder.com")!
+        urlComponents.query = (["settings2": useSetting2, "queue": trackId] as [String: Any?])
+            .compactMapValues({ $0 })
+            .map({ "\($0.key)=\($0.value)" })
+            .joined(separator: "&")
+        let requestPlaceholder = URLRequest(url: urlComponents.url!)
+        callAPI("rotor", "station", "\(stationId.type):\(stationId.tag)", "tracks", placeholder: requestPlaceholder, completion: completion)
+    }
+}

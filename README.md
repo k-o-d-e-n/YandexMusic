@@ -35,10 +35,10 @@ __Memory__
 __Usage__
     
     <executable> <CLIENT_ID[:CLIENT_SECRET]> [--options]
-    
-__Compile and run__
 
 For example, `MusicYa 1a3b5c7d9e:0z8x6y4w2q --vlc`.
+
+__Compile and run__
 
 ```
 swift build
