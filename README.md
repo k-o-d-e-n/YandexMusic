@@ -46,3 +46,13 @@ swift run
 ```
 
 Or generate and run Xcode project `swift package generate-xcodeproj`.
+
+### iOS, macCatalyst application
+
+__Compile and run__
+
+```
+0. Open ./iOS/MusicYa/MusicYa.xcodeproj;
+1. Replace 'your_client_id', 'your_secret' with your values in ./iOS/MusicYa/MusicYa/Application.swift file;
+2. Run project.
+```

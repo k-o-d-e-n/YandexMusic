@@ -257,7 +257,12 @@ extension Application {
         let semaphore = DispatchSemaphore(value: 0)
         stop()
         commandRunner?.stop {
+<<<<<<< HEAD
             try? FileHandle.standardInput.write(contentsOf: "\n".data(using: .utf8)!)
+=======
+            if #available(macOS 10.15.4, *) { try? FileHandle.standardInput.write(contentsOf: "\n".data(using: .utf8)!) }
+            else { FileHandle.standardInput.write("\n".data(using: .utf8)!) }
+>>>>>>> e95fe87d98434400f64a0eacd1d1b7109b3a217c
             self.playingTrackIndex = nil
             semaphore.signal()
         }
@@ -352,7 +357,11 @@ extension Application {
                 return load(info: info, cacheFile: cacheFile).map({ url in
                     activity?.succeed()
                     self.playingTrackIndex = index
+<<<<<<< HEAD
                     return play(url, title: (track.artists?.first.map({ $0.name + " - " }) ?? "") + track.title)
+=======
+                    return play(url, title: track.activityTitle)
+>>>>>>> e95fe87d98434400f64a0eacd1d1b7109b3a217c
                 })
             })
             .mapError { (err) -> Error in
@@ -361,7 +370,11 @@ extension Application {
             }
         }
         self.playingTrackIndex = index
+<<<<<<< HEAD
         return .success(play(cacheFile, title: track.title))
+=======
+        return .success(play(cacheFile, title: track.activityTitle))
+>>>>>>> e95fe87d98434400f64a0eacd1d1b7109b3a217c
     }
 
     func play(_ url: URL, title: String) -> ActivityIndicator<PlayerBar>? {
@@ -566,7 +579,11 @@ extension Application {
     }
 
     private func didPlay(track: Track, fromPlaylist plId: String?, fromCache: Bool?) {
+<<<<<<< HEAD
         let duration = track.durationMs.map(Int.init).map({ $0 / 1000 })
+=======
+        let duration = track.durationMs.map({ Int($0) }).map({ $0 / 1000 })
+>>>>>>> e95fe87d98434400f64a0eacd1d1b7109b3a217c
         let event = Client.PlayEvent(
             trackId: track.id, albumId: track.albums?.first?.id ?? 0, from: "YandexMusicAndroid/23020251",
             playlistId: plId, fromCache: fromCache, playId: "", uid: auth.accessToken?.uid,

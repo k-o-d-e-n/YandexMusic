@@ -39,6 +39,63 @@ public struct Feed: Codable {
         let tracksToPlay: [Track]
     }
 }
+public struct PlaylistChange: Encodable {
+    public let kind: Int
+    public let revision: Int
+    public let diff: [Diff]
+
+    public init(kind: Int, revision: Int, diff: [Diff]) {
+        self.kind = kind
+        self.revision = revision
+        self.diff = diff
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(kind, forKey: .kind)
+        try container.encode(revision, forKey: .revision)
+        try container.encode(String(data: try JSONEncoder().encode(diff), encoding: .utf8), forKey: .diff)
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case kind
+        case revision
+        case diff
+    }
+
+    public struct Diff: Codable {
+        public let op: Operation
+        public let at: Int?
+        public let from: Int?
+        public let to: Int?
+        public let tracks: [TrackID]?
+
+        public struct TrackID: Codable {
+            public let id: String
+            public let albumId: String
+
+            public init(id: String, albumId: String) {
+                self.id = id
+                self.albumId = albumId
+            }
+        }
+
+        public enum Operation: String, Codable {
+            case insert
+            case delete
+        }
+
+        public static func delete(_ index: Int) -> Diff {
+            Diff(op: .delete, at: nil, from: index, to: index + 1, tracks: nil)
+        }
+        public static func delete(_ indexes: Range<Int>) -> Diff {
+            Diff(op: .delete, at: nil, from: indexes.lowerBound, to: indexes.upperBound, tracks: nil)
+        }
+        public static func insert(_ tracks: [TrackID], at index: Int = 0) -> Diff {
+            Diff(op: .insert, at: index, from: nil, to: nil, tracks: tracks)
+        }
+    }
+}
 public typealias FeedPlaylist = Playlist<Feed.GeneratedPlaylist.Track>
 public typealias UserPlaylist = Playlist<TrackItem>
 public struct Playlist<TrackType>: Codable where TrackType: Codable {
@@ -46,6 +103,7 @@ public struct Playlist<TrackType>: Codable where TrackType: Codable {
     public let kind: Int
     public let title: String
     public let trackCount: Int
+    public let revision: Int
     public let created: Date
     public let modified: Date?
     public let durationMs: Int
@@ -65,6 +123,7 @@ public struct Playlist<TrackType>: Codable where TrackType: Codable {
         kind: Int,
         title: String,
         trackCount: Int,
+        revision: Int,
         created: Date,
         modified: Date?,
         durationMs: Int,
@@ -77,6 +136,7 @@ public struct Playlist<TrackType>: Codable where TrackType: Codable {
         self.kind = kind
         self.title = title
         self.trackCount = trackCount
+        self.revision = revision
         self.created = created
         self.modified = modified
         self.durationMs = durationMs
@@ -100,21 +160,27 @@ public struct TrackShort: Codable {
     /// let chart: Chart
     public let track: Track?
 }
-public struct Track: Codable {
+public struct Track: Codable, Equatable {
     public let id: String
     public let realId: String
     public let title: String
     public let available: Bool
+    public let lyricsAvailable: Bool
     public let availableForPremiumUsers: Bool
     public let availableFullWithoutPermission: Bool
-    public let durationMs: TimeInterval?
+    public let durationMs: Int?
     public let fileSize: Int?
     public let major: Major?
     public let albums: [Album]?
     public let artists: [Artist]?
+    public let coverUri: String?
 
     public var downloadTrackID: String {
         albums?.first.map({ "\(id):\($0.id)" }) ?? id
+    }
+
+    public func coverUrl(forImageSize size: Int) -> String? {
+        coverUri.map({ "https://" + $0.replacingOccurrences(of: "%%", with: "\(size)x\(size)") })
     }
 
     public struct Major: Codable {
@@ -130,6 +196,10 @@ public struct Track: Codable {
         public let downloadInfoUrl: String
         public let direct: Bool
     }
+
+    public static func == (lhs: Track, rhs: Track) -> Bool {
+        lhs.id == rhs.id
+    }
 }
 public struct TrackItem: Codable {
     public let id: Int
@@ -142,6 +212,7 @@ public struct TrackItem: Codable {
 }
 public struct Album: Codable {
     public let id: Int
+    public let title: String
 }
 public struct Artist: Codable {
     public let id: Int
@@ -158,9 +229,9 @@ public struct Artist: Codable {
 }
 public struct Supplement: Codable {
     public let id: String
-    public let lyrics: Lyrics
-    /// let videos: VideoSupplement
-    public let radioIsAvailable: Bool
+    public let lyrics: Lyrics?
+    public let videos: [VideoSupplement]?
+    public let radioIsAvailable: Bool?
 
     public struct Lyrics: Codable {
         public let id: Int
@@ -170,6 +241,22 @@ public struct Supplement: Codable {
         public let showTranslation: Bool
         public let textLanguage: String?
         public let url: String?
+    }
+    public struct VideoSupplement: Codable {
+        /// URL на обложку видео.
+        public let cover: String
+        /// Сервис поставляющий видео.
+        public let provider: String
+        /// Название видео.
+        public let title: String?
+        /// Уникальный идентификатор видео на сервисе.
+        public let providerVideoId: String?
+        /// URL на видео.
+        public let url: String?
+        /// URL на видео, находящегося на серверах Яндекса.
+        public let embedUrl: String?
+        /// HTML тег для встраивания видео.
+        public let embed: String?
     }
 }
 public struct RadioDashboard: Codable {

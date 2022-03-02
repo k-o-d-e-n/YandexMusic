@@ -9,12 +9,6 @@ import Foundation
 import ConsoleKit
 import YandexMusic
 
-extension Track {
-    var pageUrl: String? {
-        albums?.first.map { "https://music.yandex.ru/album/\($0.id)/track/\(id)" }
-    }
-}
-
 extension CommandGroup {
     func outContextHelp(_ console: Console)  {
         if self.commands.count > 0 {
@@ -87,8 +81,11 @@ struct PlaylistCommand: Command {
         @Flag(name: "feed", short: "f", help: "Feed playlists")
         var feed: Bool
 
-        @Flag(name: "liked", short: "l", help: "Feed playlists")
+        @Flag(name: "liked", short: "l", help: "Liked tracks playlist")
         var liked: Bool
+
+        @Flag(name: "clean-cache", short: "c", help: "Ignore cache and invalidate")
+        var cleanCache: Bool
     }
 
     struct NextCommand: Command {
@@ -152,6 +149,10 @@ struct PlaylistCommand: Command {
     var help: String { "Choose playlist" }
 
     func run(using context: CommandContext, signature: Signature) throws {
+        if signature.cleanCache {
+            URLCache.shared.removeAllCachedResponses()
+        }
+
         let application = context.app
         let activity1 = context.console.loadingBar(title: "Playlists:")
         activity1.start()
@@ -160,15 +161,17 @@ struct PlaylistCommand: Command {
         let playlistResult: Result<UserPlaylist, Error>
         if signature.feed {
             let playlistsResult = application.feedPlaylists()
-
             guard case .success(let playlists) = playlistsResult else {
                 activity1.fail()
                 return context.console.error(String(describing: playlistsResult), newLine: true)
             }
             activity1.succeed()
 
+            let dateFormatter = DateFormatter()
+            dateFormatter.dateFormat = "dd MMM YYYY"
             let chosenPlaylist = context.console.choose("Choose playlist", from: playlists) { item -> ConsoleText in
                 item.title.consoleText(color: .white, background: nil, isBold: true) +
+                    " - \(dateFormatter.string(from: item.modified ?? item.created))" +
                 (item.everPlayed == true ? "*".consoleText(color: .yellow, isBold: true) : "")
             }
 
@@ -312,7 +315,7 @@ struct HelpCommand: Command {
                 .consoleText(color: .red, background: .brightYellow, isBold: true),
             newLine: true
         )
-        context.console.output(context.console.center("v1.3").consoleText(color: .red))
+        context.console.output(context.console.center("v1.0").consoleText(color: .red))
         context.console.output("* Configuration *", style: .info, newLine: true)
         context.console.output(
             """

@@ -15,6 +15,7 @@ extension UserPlaylist {
             kind: playlist.kind,
             title: playlist.title,
             trackCount: playlist.trackCount,
+            revision: playlist.revision,
             created: playlist.created,
             modified: playlist.modified,
             durationMs: playlist.durationMs,
@@ -30,6 +31,7 @@ extension UserPlaylist {
             kind: 0,
             title: title,
             trackCount: tracks.count,
+            revision: playlist.revision,
             created: Date(),
             modified: Date(),
             durationMs: 0,
@@ -39,4 +41,48 @@ extension UserPlaylist {
             tracks: tracks
         )
     }
+
+    func shuffled() -> UserPlaylist {
+        UserPlaylist(
+            uid: uid,
+            kind: kind,
+            title: title,
+            trackCount: trackCount,
+            revision: revision,
+            created: created,
+            modified: modified,
+            durationMs: durationMs,
+            isBanner: isBanner,
+            isPremiere: isBanner,
+            everPlayed: everPlayed,
+            tracks: tracks?.shuffled()
+        )
+    }
+    func reversed() -> UserPlaylist {
+        UserPlaylist(
+            uid: uid,
+            kind: kind,
+            title: title,
+            trackCount: trackCount,
+            revision: revision,
+            created: created,
+            modified: modified,
+            durationMs: durationMs,
+            isBanner: isBanner,
+            isPremiere: isBanner,
+            everPlayed: everPlayed,
+            tracks: tracks?.reversed()
+        )
+    }
 }
+
+extension Track {
+    var pageUrl: String? {
+        albums?.first.map { "https://music.yandex.ru/album/\($0.id)/track/\(id)" }
+    }
+
+    var activityTitle: String {
+        (artists?.first.map({ $0.name + " - " }) ?? "") + title
+    }
+}
+

@@ -117,7 +117,11 @@ final class VLCPlayer {
     }
 
     private func send(_ command: String) -> String? {
-        (try? input.fileHandleForWriting.write(contentsOf: "\(command)\n".data(using: .utf8)!)).flatMap {
+        let data = "\(command)\n".data(using: .utf8)!
+        let result: Void?
+        if #available(macOS 10.15.4, *) { result = try? input.fileHandleForWriting.write(contentsOf: data) }
+        else { result = input.fileHandleForWriting.write(data) }
+        return result.flatMap {
             let resData = output.fileHandleForReading.availableData
             return String(data: resData, encoding: .utf8)
         }
